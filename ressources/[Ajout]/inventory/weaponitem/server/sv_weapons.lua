@@ -1,0 +1,74 @@
+ESX = nil
+
+TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+
+Citizen.CreateThread(function()
+    Citizen.Wait(0)
+    MySQL.Async.fetchAll('SELECT * FROM items WHERE LCASE(name) LIKE \'%weapon_%\'', {}, function(results)
+        for k, v in pairs(results) do
+            ESX.RegisterUsableItem(v.name, function(source)
+                TriggerClientEvent('WeaponItem:useWeapon', source, v.name)
+            end)
+        end
+    end)
+end)
+
+RegisterServerEvent('WeaponItem:updateAmmoCount')
+AddEventHandler('WeaponItem:updateAmmoCount', function(hash, count)
+    local player = ESX.GetPlayerFromId(source)
+    MySQL.Async.execute('UPDATE ammo_weapons SET count = @count WHERE hash = @hash AND owner = @owner', {
+        ['@owner'] = player.identifier,
+        ['@hash'] = hash,
+        ['@count'] = count
+    }, function(results)
+        if results == 0 then
+            MySQL.Async.execute('INSERT INTO ammo_weapons (owner, hash, count) VALUES (@owner, @hash, @count)', {
+                ['@owner'] = player.identifier,
+                ['@hash'] = hash,
+                ['@count'] = count
+            })
+        end
+    end)
+end)
+
+ESX.RegisterServerCallback('WeaponItem:getAmmoCount', function(source, cb, hash)
+    local player = ESX.GetPlayerFromId(source)
+    MySQL.Async.fetchAll('SELECT * FROM ammo_weapons WHERE owner = @owner and hash = @hash', {
+        ['@owner'] = player.identifier,
+        ['@hash'] = hash
+    }, function(results)
+        if #results == 0 then
+            cb(nil)
+        else
+            cb(results[1].count)
+        end
+    end)
+end)
+
+ESX.RegisterServerCallback('disc-base:takePlayerItem', function(source, cb, item, count)
+	local player = ESX.GetPlayerFromId(source)
+	local invItem = player.getInventoryItem(item)
+	if invItem.count - count < 0 then
+		cb(false)
+	else
+		player.removeInventoryItem(item, count)
+		cb(true)
+	end
+end)
+
+---- Ammo ----
+
+Citizen.CreateThread(function()
+    Citizen.Wait(0)
+    for k, v in pairs(Shared.Ammo) do
+        ESX.RegisterUsableItem(v.name, function(source)
+            TriggerClientEvent('UseAmmo', source, v)
+        end)
+    end
+end)
+
+RegisterServerEvent('RemoveAmmo')
+AddEventHandler('RemoveAmmo', function(ammo)
+    local player = ESX.GetPlayerFromId(source)
+    player.removeInventoryItem(ammo.name, 1)
+end)
